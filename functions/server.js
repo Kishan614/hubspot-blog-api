@@ -3,19 +3,26 @@ const axios = require('axios');
 const serverless = require('serverless-http');
 
 const app = express();
-const router = express.Router();
 
-// Define the route on the router
-router.get('/fetch-blogs', async (req, res) => {
+// Use a single route handler for the root path
+app.get('/', async (req, res) => {
+    fetchBlogs(req, res);
+});
+
+// Also handle the explicit slug just in case
+app.get('/fetch-blogs', async (req, res) => {
+    fetchBlogs(req, res);
+});
+
+async function fetchBlogs(req, res) {
     const allPosts = [];
     let after = null;
     const url = 'https://api.hubapi.com/cms/v3/blogs/posts';
 
     try {
-        // NOTE: Netlify Free tier has a 10s timeout. 
-        // We will fetch up to 5 pages (500 posts) to avoid timing out.
+        // Fetching 2 pages (200 posts) to ensure we stay under the 10s timeout
         let pageCount = 0;
-        const maxPages = 5; 
+        const maxPages = 2; 
 
         do {
             const response = await axios.get(url, {
@@ -31,7 +38,6 @@ router.get('/fetch-blogs', async (req, res) => {
 
             const data = response.data;
             allPosts.push(...data.results);
-
             after = data.paging?.next?.after;
             pageCount++;
 
@@ -39,22 +45,16 @@ router.get('/fetch-blogs', async (req, res) => {
 
         res.json({
             success: true,
-            count_in_this_request: allPosts.length,
-            posts: allPosts,
-            next_page: after || "End of results"
+            total_fetched: allPosts.length,
+            posts: allPosts
         });
 
     } catch (error) {
-        console.error('Error:', error.response?.data || error.message);
         res.status(500).json({ 
-            error: 'Failed to fetch blogs',
-            details: error.response?.data?.message || error.message 
+            error: 'HubSpot API Error',
+            message: error.response?.data?.message || error.message 
         });
     }
-});
+}
 
-// Point the app to use the router under the base path
-app.use('/.netlify/functions/server', router);
-
-// Export the app wrapped in the serverless-http handler
 module.exports.handler = serverless(app);
